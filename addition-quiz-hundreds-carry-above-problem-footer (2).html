@@ -1,0 +1,633 @@
+<!doctype html>
+<html lang="ar" dir="rtl" class="h-full">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>تطبيق أسئلة الجمع (حتى المئات) - حمل أعلى المسألة</title>
+
+  <script src="/_sdk/data_sdk.js"></script>
+  <script src="/_sdk/element_sdk.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <style>
+    body { box-sizing: border-box; }
+    @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700&display=swap');
+    * { font-family: 'Tajawal', sans-serif; }
+
+    .celebration { animation: celebrate 0.5s ease-in-out; }
+    @keyframes celebrate { 0%,100%{transform:scale(1)} 50%{transform:scale(1.05)} }
+
+    .digit-input {
+      width: 5rem;
+      height: 4.25rem;
+      text-align: center;
+      font-size: 2rem;
+      font-weight: 800;
+      border-width: 4px;
+      border-radius: 1.25rem;
+      outline: none;
+    }
+    .digit-input:focus { box-shadow: 0 0 0 6px rgba(236,72,153,.25); }
+
+    .carry-input {
+      width: 3.25rem;
+      height: 2.75rem;
+      text-align: center;
+      font-size: 1.4rem;
+      font-weight: 800;
+      border-width: 3px;
+      border-radius: 0.9rem;
+      outline: none;
+      opacity: 0.95;
+    }
+    .carry-input:focus { box-shadow: 0 0 0 5px rgba(139,92,246,.22); }
+
+    @media (max-width: 640px) {
+      .digit-input { width: 4.25rem; height: 3.75rem; font-size: 1.75rem; }
+      .carry-input { width: 2.8rem; height: 2.4rem; font-size: 1.25rem; }
+    }
+  </style>
+  <style>@view-transition { navigation: auto; }</style>
+</head>
+
+<body class="h-full">
+  <div id="app" class="h-full w-full overflow-auto"></div>
+
+  <script>
+    const defaultConfig = {
+      app_title: "أسئلة الجمع التفاعلية (حتى المئات) ✨",
+      encouragement_text: "أحسنتِ! استمري 🌟",
+      footer_text: "أ/ فاطمة هزازي , ملتقى معلمي ومعلمات الرياضيات , الملتقى التفاعلي",
+      background_color: "#FFF5F7",
+      card_color: "#FFFFFF",
+      text_color: "#2D3748",
+      primary_button_color: "#EC4899",
+      secondary_button_color: "#8B5CF6",
+      font_family: "Tajawal",
+      font_size: 16
+    };
+
+    let currentQuestion = null;
+    let score = 0;
+    let totalAnswered = 0;
+    let answeredQuestions = [];
+
+    const arabicNumerals = ['٠','١','٢','٣','٤','٥','٦','٧','٨','٩'];
+
+    function normalizeDigits(str) {
+      if (str == null) return "";
+      const s = String(str).trim();
+      const map = {
+        '٠':'0','١':'1','٢':'2','٣':'3','٤':'4','٥':'5','٦':'6','٧':'7','٨':'8','٩':'9',
+        '۰':'0','۱':'1','۲':'2','۳':'3','۴':'4','۵':'5','۶':'6','۷':'7','۸':'8','۹':'9'
+      };
+      return s.split('').map(ch => map[ch] ?? ch).join('');
+    }
+
+    function toArabicNumerals(num) {
+      const n = Number(num);
+      if (!Number.isFinite(n)) return '';
+      return String(Math.trunc(n)).split('').map(ch => {
+        if (ch === '-') return '-';
+        const d = ch.charCodeAt(0) - 48;
+        return (d >= 0 && d <= 9) ? arabicNumerals[d] : ch;
+      }).join('');
+    }
+
+    function randInt(min, max) {
+      return Math.floor(Math.random() * (max - min + 1)) + min;
+    }
+
+    function generateQuestion() {
+      const wantCarryOnes = Math.random() < 0.70;
+      const wantCarryTens = Math.random() < 0.55;
+
+      for (let attempt = 0; attempt < 200; attempt++) {
+        let o1 = randInt(0, 9), o2;
+        if (wantCarryOnes) {
+          const minO2 = 10 - o1;
+          if (minO2 > 9) continue;
+          o2 = randInt(minO2, 9);
+        } else {
+          o2 = randInt(0, 9 - o1);
+        }
+        const onesSum = o1 + o2;
+        const carry1 = Math.floor(onesSum / 10);
+
+        let t1 = randInt(0, 9), t2;
+        if (wantCarryTens) {
+          const minT2 = 10 - carry1 - t1;
+          if (minT2 > 9) continue;
+          t2 = randInt(Math.max(0, minT2), 9);
+        } else {
+          const maxT2 = 9 - carry1 - t1;
+          if (maxT2 < 0) continue;
+          t2 = randInt(0, maxT2);
+        }
+        const tensSum = t1 + t2 + carry1;
+        const carry2 = Math.floor(tensSum / 10);
+
+        let h1 = randInt(1, 9);
+        const maxH2 = 9 - carry2 - h1;
+        if (maxH2 < 0) continue;
+        let h2 = randInt(0, maxH2);
+
+        const num1 = 100 * h1 + 10 * t1 + o1;
+        const num2 = 100 * h2 + 10 * t2 + o2;
+        const answer = num1 + num2;
+
+        return { id: Date.now().toString(), num1, num2, answer, digits: { h1, t1, o1, h2, t2, o2 } };
+      }
+
+      const num1 = randInt(100, 600);
+      const num2 = randInt(100, 300);
+      return { id: Date.now().toString(), num1, num2, answer: num1 + num2, digits: null };
+    }
+
+    const dataHandler = {
+      onDataChanged(data) {
+        answeredQuestions = data;
+        totalAnswered = data.length;
+        score = data.filter(q => q.is_correct).length;
+        updateStats();
+      }
+    };
+
+    function updateStats() {
+      const config = window.elementSdk?.config || defaultConfig;
+      const customFont = config.font_family || defaultConfig.font_family;
+      const baseSize = config.font_size || defaultConfig.font_size;
+
+      const statsEl = document.getElementById('stats');
+      if (statsEl) {
+        statsEl.innerHTML = `
+          <div style="color:${config.text_color || defaultConfig.text_color}; font-family:${customFont},sans-serif; font-size:${baseSize * 1.2}px;">
+            <span style="font-size:${baseSize * 1.5}px;">⭐</span>
+            النقاط: ${toArabicNumerals(score)} / ${toArabicNumerals(totalAnswered)}
+          </div>
+        `;
+      }
+    }
+
+    function readBoxedAnswer() {
+      const h = normalizeDigits(document.getElementById('ans-h').value).replace(/\D/g,'').slice(-1);
+      const t = normalizeDigits(document.getElementById('ans-t').value).replace(/\D/g,'').slice(-1);
+      const o = normalizeDigits(document.getElementById('ans-o').value).replace(/\D/g,'').slice(-1);
+
+      if (h === "" || t === "" || o === "") return { ok: false, value: null };
+      const value = parseInt(`${h}${t}${o}`, 10);
+      return { ok: Number.isFinite(value), value };
+    }
+
+    function clearAnswerArea() {
+      ['ans-h','ans-t','ans-o','carry-to-t','carry-to-h'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = '';
+      });
+    }
+
+    function disableAnswerArea(disabled) {
+      ['ans-h','ans-t','ans-o','carry-to-t','carry-to-h'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.disabled = disabled;
+      });
+    }
+
+    function focusFirstBox() {
+      const el = document.getElementById('ans-h');
+      if (el) el.focus();
+    }
+
+    function attachDigitBoxBehaviors() {
+      const ids = ['ans-h','ans-t','ans-o'];
+      ids.forEach((id, idx) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+
+        el.addEventListener('input', () => {
+          const raw = normalizeDigits(el.value);
+          const digitsOnly = raw.replace(/\D/g,'');
+
+          if (digitsOnly.length >= 2) {
+            const last3 = digitsOnly.slice(-3).padStart(3,'0');
+            document.getElementById('ans-h').value = last3[0];
+            document.getElementById('ans-t').value = last3[1];
+            document.getElementById('ans-o').value = last3[2];
+            document.getElementById('ans-o').focus();
+            return;
+          }
+
+          el.value = digitsOnly.slice(-1);
+          if (el.value && idx < ids.length - 1) {
+            document.getElementById(ids[idx + 1]).focus();
+          }
+        });
+
+        el.addEventListener('keydown', (e) => {
+          if (e.key === 'Backspace' && !el.value && idx > 0) {
+            document.getElementById(ids[idx - 1]).focus();
+          }
+          if (e.key === 'Enter') {
+            const submitBtn = document.getElementById('submit-btn');
+            if (submitBtn && !submitBtn.disabled) checkAnswer(e);
+          }
+        });
+      });
+
+      ['carry-to-t','carry-to-h'].forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.addEventListener('input', () => {
+          const raw = normalizeDigits(el.value);
+          el.value = raw.replace(/\D/g,'').slice(-1);
+        });
+      });
+    }
+
+    function buildExplanation(q) {
+      const d = q.digits;
+      if (!d) return '';
+
+      const onesSum = d.o1 + d.o2;
+      const carry1 = Math.floor(onesSum / 10);
+      const rOnes = onesSum % 10;
+
+      const tensSum = d.t1 + d.t2 + carry1;
+      const carry2 = Math.floor(tensSum / 10);
+      const rTens = tensSum % 10;
+
+      const hundredsSum = d.h1 + d.h2 + carry2;
+      const rHundreds = hundredsSum;
+
+      const line = (label, expr) => `<div class="mb-1"><span class="font-bold">${label}</span> <span dir="ltr">${expr}</span></div>`;
+
+      let html = `<div class="text-right leading-7">`;
+      html += line('الخطوة ١: نجمع الآحاد:', `${toArabicNumerals(d.o1)} + ${toArabicNumerals(d.o2)} = ${toArabicNumerals(onesSum)}`);
+      html += carry1
+        ? `<div class="mb-1"><span class="font-bold">الخطوة ٢:</span> نحمل <span dir="ltr">${toArabicNumerals(carry1)}</span> إلى العشرات ونكتب <span dir="ltr">${toArabicNumerals(rOnes)}</span> في الآحاد.</div>`
+        : `<div class="mb-1"><span class="font-bold">الخطوة ٢:</span> لا يوجد حمل من الآحاد.</div>`;
+      html += line('الخطوة ٣: نجمع العشرات:', carry1
+        ? `${toArabicNumerals(d.t1)} + ${toArabicNumerals(d.t2)} + ${toArabicNumerals(carry1)} = ${toArabicNumerals(tensSum)}`
+        : `${toArabicNumerals(d.t1)} + ${toArabicNumerals(d.t2)} = ${toArabicNumerals(tensSum)}`
+      );
+      html += carry2
+        ? `<div class="mb-1"><span class="font-bold">الخطوة ٤:</span> نحمل <span dir="ltr">${toArabicNumerals(carry2)}</span> إلى المئات ونكتب <span dir="ltr">${toArabicNumerals(rTens)}</span> في العشرات.</div>`
+        : `<div class="mb-1"><span class="font-bold">الخطوة ٤:</span> لا يوجد حمل من العشرات.</div>`;
+      html += line('الخطوة ٥: نجمع المئات:', carry2
+        ? `${toArabicNumerals(d.h1)} + ${toArabicNumerals(d.h2)} + ${toArabicNumerals(carry2)} = ${toArabicNumerals(hundredsSum)}`
+        : `${toArabicNumerals(d.h1)} + ${toArabicNumerals(d.h2)} = ${toArabicNumerals(hundredsSum)}`
+      );
+      html += `<div class="mt-2 font-extrabold">الناتج النهائي: <span dir="ltr">${toArabicNumerals(rHundreds)}${toArabicNumerals(rTens)}${toArabicNumerals(rOnes)}</span></div>`;
+      html += `</div>`;
+      return html;
+    }
+
+    async function saveAttempt(payload) {
+      try {
+        if (window.dataSdk && typeof window.dataSdk.create === 'function') {
+          const res = await window.dataSdk.create(payload);
+          if (res && res.isOk) return true;
+        }
+      } catch (e) {}
+      answeredQuestions.push(payload);
+      totalAnswered = answeredQuestions.length;
+      score = answeredQuestions.filter(q => q.is_correct).length;
+      updateStats();
+      return true;
+    }
+
+    async function checkAnswer(evt) {
+      if (evt?.preventDefault) evt.preventDefault();
+      if (evt?.stopPropagation) evt.stopPropagation();
+
+      const config = window.elementSdk?.config || defaultConfig;
+
+      const resultEl = document.getElementById('result');
+      const submitBtn = document.getElementById('submit-btn');
+      const nextBtn = document.getElementById('next-btn');
+
+      const boxed = readBoxedAnswer();
+      if (!boxed.ok) {
+        resultEl.textContent = '⚠️ اكتبي كل رقم في مربعه (مئات/عشرات/آحاد)';
+        resultEl.style.color = '#F59E0B';
+        return;
+      }
+
+      submitBtn.disabled = true;
+      submitBtn.style.opacity = '0.55';
+
+      const userAnswer = boxed.value;
+      const isCorrect = userAnswer === currentQuestion.answer;
+
+      const ok = await saveAttempt({
+        question_id: currentQuestion.id,
+        student_answer: userAnswer,
+        correct_answer: currentQuestion.answer,
+        is_correct: isCorrect,
+        timestamp: new Date().toISOString()
+      });
+
+      if (ok) {
+        if (isCorrect) {
+          resultEl.textContent = `${config.encouragement_text || defaultConfig.encouragement_text}`;
+          resultEl.style.color = '#10B981';
+          resultEl.classList.add('celebration');
+          setTimeout(() => resultEl.classList.remove('celebration'), 500);
+        } else {
+          const expl = buildExplanation(currentQuestion);
+          resultEl.innerHTML = `
+            <div class="text-center font-bold mb-2" style="color:#EF4444;">❌ الإجابة الصحيحة: ${toArabicNumerals(currentQuestion.answer)}</div>
+            ${expl ? `<div class="mt-3 p-4 rounded-2xl border" style="border-color:#F59E0B; background:#FFFBEB; color:${config.text_color || defaultConfig.text_color};">${expl}</div>` : ''}
+          `;
+          resultEl.style.color = '#EF4444';
+        }
+
+        disableAnswerArea(true);
+        nextBtn.classList.remove('hidden');
+      } else {
+        resultEl.textContent = '⚠️ حدث خطأ، حاولي مرة أخرى';
+        resultEl.style.color = '#F59E0B';
+        submitBtn.disabled = false;
+        submitBtn.style.opacity = '1';
+      }
+    }
+
+    function nextQuestion(evt) {
+      if (evt?.preventDefault) evt.preventDefault();
+      if (evt?.stopPropagation) evt.stopPropagation();
+
+      const resultEl = document.getElementById('result');
+      const submitBtn = document.getElementById('submit-btn');
+      const nextBtn = document.getElementById('next-btn');
+
+      currentQuestion = generateQuestion();
+      clearAnswerArea();
+      disableAnswerArea(false);
+      resultEl.textContent = '';
+      submitBtn.disabled = false;
+      submitBtn.style.opacity = '1';
+      nextBtn.classList.add('hidden');
+
+      displayQuestion();
+      focusFirstBox();
+    }
+
+    function displayQuestion() {
+      const config = window.elementSdk?.config || defaultConfig;
+      const customFont = config.font_family || defaultConfig.font_family;
+      const baseSize = config.font_size || defaultConfig.font_size;
+
+      const questionEl = document.getElementById('question');
+      const d = currentQuestion.digits;
+
+      if (!d) {
+        questionEl.innerHTML = `
+          <div style="font-size:${baseSize * 2.2}px; font-weight:bold; color:${config.text_color || defaultConfig.text_color}; font-family:${customFont},sans-serif;">
+            ${toArabicNumerals(currentQuestion.num1)} + ${toArabicNumerals(currentQuestion.num2)} = ؟
+          </div>
+        `;
+        return;
+      }
+
+      const boxStyle = `background:${config.card_color || defaultConfig.card_color}; border-color:${config.primary_button_color || defaultConfig.primary_button_color}; color:${config.text_color || defaultConfig.text_color};`;
+      const carryStyle = `background:${config.card_color || defaultConfig.card_color}; border-color:${config.secondary_button_color || defaultConfig.secondary_button_color}; color:${config.text_color || defaultConfig.text_color};`;
+
+      // ✅ حمل فوق العشرات والمئات داخل نفس منطقة المسألة
+      questionEl.innerHTML = `
+        <div class="w-full flex flex-col items-center gap-4" style="font-family:${customFont},sans-serif;">
+
+          <div class="grid grid-cols-3 gap-4 items-end justify-items-center" dir="ltr">
+            <div class="text-center">
+              <div class="text-sm font-bold text-gray-500 mb-1">حمل إلى المئات</div>
+              <input id="carry-to-h" type="text" inputmode="numeric" maxlength="1"
+                class="carry-input" style="${carryStyle}" autocomplete="off" />
+            </div>
+            <div class="text-center">
+              <div class="text-sm font-bold text-gray-500 mb-1">حمل إلى العشرات</div>
+              <input id="carry-to-t" type="text" inputmode="numeric" maxlength="1"
+                class="carry-input" style="${carryStyle}" autocomplete="off" />
+            </div>
+            <div class="text-center">
+              <div class="text-sm font-bold text-gray-500 mb-1">حمل إلى الآحاد</div>
+              <div class="text-gray-400 text-sm">—</div>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-3 gap-4 items-center justify-items-center" dir="ltr">
+            <div class="text-center">
+              <div class="text-sm font-bold text-gray-500">مئات</div>
+              <div class="rounded-2xl border-4 px-4 py-3 text-3xl font-extrabold" style="${boxStyle}">${toArabicNumerals(d.h1)}</div>
+            </div>
+            <div class="text-center">
+              <div class="text-sm font-bold text-gray-500">عشرات</div>
+              <div class="rounded-2xl border-4 px-4 py-3 text-3xl font-extrabold" style="${boxStyle}">${toArabicNumerals(d.t1)}</div>
+            </div>
+            <div class="text-center">
+              <div class="text-sm font-bold text-gray-500">آحاد</div>
+              <div class="rounded-2xl border-4 px-4 py-3 text-3xl font-extrabold" style="${boxStyle}">${toArabicNumerals(d.o1)}</div>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-3 gap-4 items-center justify-items-center" dir="ltr">
+            <div class="text-center">
+              <div class="text-sm font-bold text-gray-500">مئات</div>
+              <div class="rounded-2xl border-4 px-4 py-3 text-3xl font-extrabold" style="${boxStyle}">${toArabicNumerals(d.h2)}</div>
+            </div>
+            <div class="text-center">
+              <div class="text-sm font-bold text-gray-500">عشرات</div>
+              <div class="rounded-2xl border-4 px-4 py-3 text-3xl font-extrabold" style="${boxStyle}">${toArabicNumerals(d.t2)}</div>
+            </div>
+            <div class="text-center">
+              <div class="text-sm font-bold text-gray-500">آحاد</div>
+              <div class="rounded-2xl border-4 px-4 py-3 text-3xl font-extrabold" style="${boxStyle}">${toArabicNumerals(d.o2)}</div>
+            </div>
+          </div>
+
+          <div class="text-6xl font-extrabold" style="color:${config.primary_button_color || defaultConfig.primary_button_color};">+</div>
+          <div class="w-full h-1 rounded-full" style="background:${config.primary_button_color || defaultConfig.primary_button_color};"></div>
+        </div>
+      `;
+    }
+
+    async function onConfigChange(config) {
+      const customFont = config.font_family || defaultConfig.font_family;
+      const baseSize = config.font_size || defaultConfig.font_size;
+
+      const app = document.getElementById('app');
+      app.style.background = config.background_color || defaultConfig.background_color;
+
+      const titleEl = document.getElementById('title');
+      if (titleEl) {
+        titleEl.textContent = config.app_title || defaultConfig.app_title;
+        titleEl.style.fontFamily = `${customFont}, sans-serif`;
+        titleEl.style.fontSize = `${baseSize * 2}px`;
+        titleEl.style.color = config.text_color || defaultConfig.text_color;
+      }
+
+      const footerEl = document.getElementById('footer');
+      if (footerEl) {
+        footerEl.textContent = config.footer_text || defaultConfig.footer_text;
+        footerEl.style.fontFamily = `${customFont}, sans-serif`;
+        footerEl.style.fontSize = `${baseSize * 0.95}px`;
+        footerEl.style.color = config.text_color || defaultConfig.text_color;
+      }
+
+      updateStats();
+      if (currentQuestion) displayQuestion();
+    }
+
+    async function initApp() {
+      if (window.elementSdk) {
+        await window.elementSdk.init({
+          defaultConfig,
+          onConfigChange,
+          mapToCapabilities: (config) => ({
+            recolorables: [
+              { get: () => config.background_color || defaultConfig.background_color,
+                set: (value) => window.elementSdk.setConfig({ background_color: value }) },
+              { get: () => config.card_color || defaultConfig.card_color,
+                set: (value) => window.elementSdk.setConfig({ card_color: value }) },
+              { get: () => config.text_color || defaultConfig.text_color,
+                set: (value) => window.elementSdk.setConfig({ text_color: value }) },
+              { get: () => config.primary_button_color || defaultConfig.primary_button_color,
+                set: (value) => window.elementSdk.setConfig({ primary_button_color: value }) },
+              { get: () => config.secondary_button_color || defaultConfig.secondary_button_color,
+                set: (value) => window.elementSdk.setConfig({ secondary_button_color: value }) }
+            ],
+            borderables: [],
+            fontEditable: {
+              get: () => config.font_family || defaultConfig.font_family,
+              set: (value) => window.elementSdk.setConfig({ font_family: value })
+            },
+            fontSizeable: {
+              get: () => config.font_size || defaultConfig.font_size,
+              set: (value) => window.elementSdk.setConfig({ font_size: value })
+            }
+          }),
+          mapToEditPanelValues: (config) => new Map([
+            ["app_title", config.app_title || defaultConfig.app_title],
+            ["encouragement_text", config.encouragement_text || defaultConfig.encouragement_text],
+            ["footer_text", config.footer_text || defaultConfig.footer_text]
+          ])
+        });
+      }
+
+      if (window.dataSdk) {
+        try { await window.dataSdk.init(dataHandler); } catch (e) {}
+      }
+
+      renderApp();
+      currentQuestion = generateQuestion();
+      displayQuestion();
+      // انتبهي: حمل داخل المسألة يُعاد إنشاؤه مع displayQuestion، لذلك نربط السلوك بعد كل عرض
+      // الحل: نربط السلوك كل مرة بعد عرض السؤال و/أو بعد رندر الواجهة.
+      attachDigitBoxBehaviors();
+      focusFirstBox();
+    }
+
+    function renderApp() {
+      const config = window.elementSdk?.config || defaultConfig;
+      const customFont = config.font_family || defaultConfig.font_family;
+      const baseSize = config.font_size || defaultConfig.font_size;
+
+      const app = document.getElementById('app');
+      app.style.background = config.background_color || defaultConfig.background_color;
+
+      app.innerHTML = `
+        <div class="min-h-full flex flex-col items-center justify-center p-6">
+          <div class="w-full max-w-2xl">
+            <h1 id="title" class="text-center mb-8 font-bold"
+              style="color:${config.text_color || defaultConfig.text_color}; font-family:${customFont},sans-serif; font-size:${baseSize * 2}px;">
+              ${config.app_title || defaultConfig.app_title}
+            </h1>
+
+            <div id="stats" class="text-center mb-6"></div>
+
+            <div class="rounded-3xl shadow-2xl p-8 mb-6" style="background:${config.card_color || defaultConfig.card_color};">
+              <div id="question" class="text-center mb-8"></div>
+
+              <!-- الناتج (مربعات) -->
+              <div class="flex flex-col items-center gap-3 mb-6">
+                <div class="text-2xl font-extrabold" style="color:${config.text_color || defaultConfig.text_color};">
+                  = ؟
+                </div>
+
+                <div class="flex items-center justify-center gap-4" dir="ltr">
+                  <div class="text-center">
+                    <div class="text-sm font-bold text-gray-500 mb-1">مئات</div>
+                    <input id="ans-h" type="text" inputmode="numeric" maxlength="1" class="digit-input"
+                      style="border-color:${config.primary_button_color || defaultConfig.primary_button_color};
+                             background:${config.card_color || defaultConfig.card_color};
+                             color:${config.text_color || defaultConfig.text_color};
+                             font-family:${customFont},sans-serif;
+                             font-size:${baseSize * 2}px;"
+                      autocomplete="off" />
+                  </div>
+                  <div class="text-center">
+                    <div class="text-sm font-bold text-gray-500 mb-1">عشرات</div>
+                    <input id="ans-t" type="text" inputmode="numeric" maxlength="1" class="digit-input"
+                      style="border-color:${config.primary_button_color || defaultConfig.primary_button_color};
+                             background:${config.card_color || defaultConfig.card_color};
+                             color:${config.text_color || defaultConfig.text_color};
+                             font-family:${customFont},sans-serif;
+                             font-size:${baseSize * 2}px;"
+                      autocomplete="off" />
+                  </div>
+                  <div class="text-center">
+                    <div class="text-sm font-bold text-gray-500 mb-1">آحاد</div>
+                    <input id="ans-o" type="text" inputmode="numeric" maxlength="1" class="digit-input"
+                      style="border-color:${config.primary_button_color || defaultConfig.primary_button_color};
+                             background:${config.card_color || defaultConfig.card_color};
+                             color:${config.text_color || defaultConfig.text_color};
+                             font-family:${customFont},sans-serif;
+                             font-size:${baseSize * 2}px;"
+                      autocomplete="off" />
+                  </div>
+                </div>
+
+                <div class="text-sm text-gray-500">اكتبي كل رقم في مربعه</div>
+              </div>
+
+              <div class="flex flex-col items-center gap-4">
+                <div class="flex gap-4">
+                  <button id="submit-btn" type="button" onclick="checkAnswer(event)"
+                    class="px-8 py-4 text-white rounded-2xl font-bold shadow-lg hover:shadow-xl transition-all transform hover:scale-105"
+                    style="background:${config.primary_button_color || defaultConfig.primary_button_color};
+                           font-family:${customFont},sans-serif;
+                           font-size:${baseSize * 1.1}px;">
+                    تحقق من الإجابة ✓
+                  </button>
+
+                  <button id="next-btn" type="button" onclick="nextQuestion(event)"
+                    class="hidden px-8 py-4 text-white rounded-2xl font-bold shadow-lg hover:shadow-xl transition-all transform hover:scale-105"
+                    style="background:${config.secondary_button_color || defaultConfig.secondary_button_color};
+                           font-family:${customFont},sans-serif;
+                           font-size:${baseSize * 1.1}px;">
+                    السؤال التالي ←
+                  </button>
+                </div>
+
+                <div id="result" class="text-center font-bold mt-2"
+                  style="font-family:${customFont},sans-serif; font-size:${baseSize * 1.15}px;"></div>
+              </div>
+            </div>
+
+            <p id="footer" class="text-center"
+              style="color:${config.text_color || defaultConfig.text_color}; font-family:${customFont},sans-serif; font-size:${baseSize * 0.95}px;">
+              ${config.footer_text || defaultConfig.footer_text}
+            </p>
+          </div>
+        </div>
+      `;
+
+      updateStats();
+
+      // اربط سلوك المربعات بعد الرندر
+      attachDigitBoxBehaviors();
+      focusFirstBox();
+    }
+
+    document.addEventListener('DOMContentLoaded', initApp);
+  </script>
+</body>
+</html>
